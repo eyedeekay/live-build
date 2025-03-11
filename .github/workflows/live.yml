@@ -55,7 +55,9 @@ jobs:
             ca-certificates \
             jq \
             mmdebstrap \
-            apt-utils
+            apt-utils \
+            dpkg
+          sudo apt-get upgrade -y
 
       # Enable tmate debugging if requested
       - name: Setup tmate debug session
