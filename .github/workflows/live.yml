@@ -86,7 +86,6 @@ jobs:
             --archive-areas "main contrib non-free non-free-firmware" \
             --apt-indices false \
             --security true \
-            --updates true \
             --source false \
             --bootappend-live "boot=live components locales=en_US.UTF-8" \
             "${@}"
