@@ -57,7 +57,7 @@ jobs:
             mmdebstrap \
             apt-utils \
             dpkg \
-            *-keyring
+            *archive-keyring
           sudo apt-get upgrade -y
 
       # Enable tmate debugging if requested
