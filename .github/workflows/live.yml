@@ -126,6 +126,9 @@ jobs:
             exit 1
           fi
 
+      - name: Create Build Directory
+        run: mkdir -p /__w/live-build/live-build/build
+
       - name: Build live system ISO
         working-directory: ${{ env.BUILD_DIR }}
         run: |
