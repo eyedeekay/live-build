@@ -19,15 +19,22 @@ on:
 jobs:
   build-iso:
     runs-on: ubuntu-latest
-    timeout-minutes: 120  # Build may take considerable time
+    container:
+      image: debian:sid
+      options: --privileged
+    timeout-minutes: 120
 
     steps:
+      - name: Install git and essential packages
+        run: |
+          apt-get update
+          apt-get install -y git curl ca-certificates
+
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Full history for versioning
+          fetch-depth: 0
 
-      # Setup environment variables
       - name: Configure build environment
         id: config
         run: |
@@ -35,15 +42,12 @@ jobs:
           echo "DEBIAN_FRONTEND=noninteractive" >> $GITHUB_ENV
           echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
           echo "BUILD_DIR=${{ github.workspace }}/build" >> $GITHUB_ENV
-          # Generate an ISO name based on repo name or custom name from config
           REPO_NAME=$(echo "${{ github.repository }}" | awk -F '/' '{print $2}')
           echo "ISO_NAME=${REPO_NAME}-live-$(date +%Y%m%d)" >> $GITHUB_ENV
 
-      # Install required dependencies
       - name: Install live-build and dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get install -y \
             live-build \
             xorriso \
             isolinux \
@@ -51,32 +55,24 @@ jobs:
             debootstrap \
             squashfs-tools \
             wget \
-            curl \
-            ca-certificates \
             jq \
             mmdebstrap \
             apt-utils \
             dpkg \
             *archive-keyring
-          sudo apt-get upgrade -y
 
-      # Enable tmate debugging if requested
       - name: Setup tmate debug session
         uses: mxschmitt/action-tmate@v3
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug }}
         with:
           limit-access-to-actor: true
 
-      # Validate configuration 
       - name: Validate live-build configuration
         id: validate
         run: |
-          # Check if auto/ directory exists, otherwise use default setup
           if [ ! -d "auto" ]; then
             echo "::warning::No auto/ directory found, using default configuration"
             mkdir -p auto
-            
-            # Create minimal auto/config script
             cat > auto/config << 'EOF'
           #!/bin/sh
           set -e
@@ -96,7 +92,6 @@ jobs:
             chmod +x auto/config
           fi
           
-          # Check for package lists
           if [ ! -d "config/package-lists" ]; then
             echo "::warning::No package lists found, creating minimal package list"
             mkdir -p config/package-lists
@@ -105,33 +100,24 @@ jobs:
             echo "firmware-linux" >> config/package-lists/kernel.list.chroot
           fi
           
-          # Validate auto/config is executable
           if [ -f "auto/config" ] && [ ! -x "auto/config" ]; then
-            echo "::error::auto/config exists but is not executable"
             chmod +x auto/config
           fi
 
-      # Clean previous build artifacts if they exist
       - name: Clean build environment
         run: |
-          # Create or clean build directory
           mkdir -p ${{ env.BUILD_DIR }}
-          
-          # If lb exists, run lb clean
           if command -v lb &> /dev/null; then
             lb clean --purge
           fi
 
-      # Initialize live-build configuration
       - name: Initialize live-build configuration
         working-directory: ${{ env.BUILD_DIR }}
         run: |
-          # Copy configuration from repo to build directory
           cp -r ${{ github.workspace }}/auto ${{ env.BUILD_DIR }}/ || true
           mkdir -p ${{ env.BUILD_DIR }}/config
           cp -r ${{ github.workspace }}/config/* ${{ env.BUILD_DIR }}/config/ || true
           
-          # Initialize configuration
           if [ -f "auto/config" ]; then
             ./auto/config
           else
@@ -139,31 +125,25 @@ jobs:
             exit 1
           fi
 
-      # Build the live system
       - name: Build live system ISO
         working-directory: ${{ env.BUILD_DIR }}
         run: |
-          # Create build script with error handling
           cat > build.sh << 'EOF'
           #!/bin/bash
           set -eo pipefail
           
-          # Redirect output to both console and log file
           exec > >(tee -a build.log) 2>&1
           
           echo "Starting live-build process at $(date)"
           
-          # Run the build with appropriate error handling
           if [ -f "auto/build" ]; then
-            sudo ./auto/build
+            ./auto/build
           else
-            sudo lb build
+            lb build
           fi
           
-          # Verify ISO was created
           if ls live-image-*.iso 1> /dev/null 2>&1; then
             echo "ISO build successful!"
-            # Rename ISO to standard name
             for iso in live-image-*.iso; do
               mv "$iso" "../${{ env.ISO_NAME }}.iso"
               echo "::set-output name=iso_path::${{ env.BUILD_DIR }}/../${{ env.ISO_NAME }}.iso"
@@ -177,27 +157,14 @@ jobs:
           EOF
           
           chmod +x build.sh
-          
-          # Run build with timeout for safety
           timeout 90m ./build.sh || {
             echo "::error::Build failed or timed out after 90 minutes"
-            
-            # Capture build logs even on failure
             if [ -f "build.log" ]; then
               cp build.log ${{ github.workspace }}/build.log
             fi
-            
-            # Check for common issues
-            if grep -q "E: You don't have enough free space" build.log; then
-              echo "::error::Build failed due to insufficient disk space"
-            elif grep -q "E: Failed to fetch" build.log; then
-              echo "::error::Build failed due to network issues"
-            fi
-            
             exit 1
           }
 
-      # Calculate checksums for the ISO
       - name: Generate checksums
         run: |
           ISO_PATH="${{ env.BUILD_DIR }}/../${{ env.ISO_NAME }}.iso"
@@ -210,7 +177,6 @@ jobs:
             exit 1
           fi
 
-      # Upload build logs
       - name: Upload build logs
         uses: actions/upload-artifact@v4
         if: always()
@@ -222,7 +188,6 @@ jobs:
             ${{ env.BUILD_DIR }}/.build/
           retention-days: 7
 
-      # Upload the ISO artifact
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
@@ -232,7 +197,6 @@ jobs:
             ${{ env.BUILD_DIR }}/../${{ env.ISO_NAME }}.sha256sum
           retention-days: 30
 
-      # Create GitHub Release for tagged builds
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
