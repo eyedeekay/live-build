@@ -126,6 +126,9 @@ jobs:
             exit 1
           fi
 
+      - name: Fix ownership warning
+        run: git config --global --add safe.directory /__w/live-build/live-build
+
       - name: Create Build Directory
         run: mkdir -p /__w/live-build/live-build/build
 
