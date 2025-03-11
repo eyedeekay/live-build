@@ -152,9 +152,9 @@ jobs:
           
           # Run the build with appropriate error handling
           if [ -f "auto/build" ]; then
-            ./auto/build
+            sudo ./auto/build
           else
-            lb build
+            sudo lb build
           fi
           
           # Verify ISO was created
