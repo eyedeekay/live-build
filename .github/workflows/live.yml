@@ -58,8 +58,9 @@ jobs:
             jq \
             mmdebstrap \
             apt-utils \
-            dpkg \
-            *archive-keyring
+            dpkg-dev \
+            debian-archive-keyring \
+            debian-keyring
 
       - name: Setup tmate debug session
         uses: mxschmitt/action-tmate@v3
@@ -125,47 +126,45 @@ jobs:
             exit 1
           fi
 
-          - name: Build live system ISO
-          run: |
-            mkdir -p ${{ env.BUILD_DIR }}
-            cd ${{ env.BUILD_DIR }}
-            
-            cat > build.sh << 'EOF'
-            #!/bin/bash
-            set -eo pipefail
-            
-            exec > >(tee -a build.log) 2>&1
-            
-            echo "Starting live-build process at $(date)"
-            
-            if [ -f "auto/build" ]; then
-              ./auto/build
-            else
-              lb build
+      - name: Build live system ISO
+        working-directory: ${{ env.BUILD_DIR }}
+        run: |
+          cat > build.sh << 'EOF'
+          #!/bin/bash
+          set -eo pipefail
+          
+          exec > >(tee -a build.log) 2>&1
+          
+          echo "Starting live-build process at $(date)"
+          
+          if [ -f "auto/build" ]; then
+            ./auto/build
+          else
+            lb build
+          fi
+          
+          if ls live-image-*.iso 1> /dev/null 2>&1; then
+            echo "ISO build successful!"
+            for iso in live-image-*.iso; do
+              mv "$iso" "../${{ env.ISO_NAME }}.iso"
+              echo "::set-output name=iso_path::${{ env.BUILD_DIR }}/../${{ env.ISO_NAME }}.iso"
+              echo "::set-output name=iso_name::${{ env.ISO_NAME }}.iso"
+              break
+            done
+          else
+            echo "::error::ISO build failed! No ISO file found."
+            exit 1
+          fi
+          EOF
+          
+          chmod +x build.sh
+          timeout 90m ./build.sh || {
+            echo "::error::Build failed or timed out after 90 minutes"
+            if [ -f "build.log" ]; then
+              cp build.log ${{ github.workspace }}/build.log
             fi
-            
-            if ls live-image-*.iso 1> /dev/null 2>&1; then
-              echo "ISO build successful!"
-              for iso in live-image-*.iso; do
-                mv "$iso" "../${{ env.ISO_NAME }}.iso"
-                echo "::set-output name=iso_path::${{ env.BUILD_DIR }}/../${{ env.ISO_NAME }}.iso"
-                echo "::set-output name=iso_name::${{ env.ISO_NAME }}.iso"
-                break
-              done
-            else
-              echo "::error::ISO build failed! No ISO file found."
-              exit 1
-            fi
-            EOF
-            
-            chmod +x build.sh
-            timeout 90m ./build.sh || {
-              echo "::error::Build failed or timed out after 90 minutes"
-              if [ -f "build.log" ]; then
-                cp build.log ${{ github.workspace }}/build.log
-              fi
-              exit 1
-            }
+            exit 1
+          }
 
       - name: Generate checksums
         run: |
