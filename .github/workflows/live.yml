@@ -56,7 +56,8 @@ jobs:
             jq \
             mmdebstrap \
             apt-utils \
-            dpkg
+            dpkg \
+            *-keyring
           sudo apt-get upgrade -y
 
       # Enable tmate debugging if requested
